@@ -18,6 +18,8 @@ export default defineConfig({
             ? {
                   browser_specific_settings: {
                       gecko: {
+                          // 与 Firefox 附加组件商店上的扩展 ID 保持一致
+                          id: '{7e307fde-371b-495e-b65f-e1b637953867}',
                           data_collection_permissions: {
                               required: ['browsingActivity', 'searchTerms', 'websiteContent']
                           }
