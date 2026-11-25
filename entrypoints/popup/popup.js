@@ -16,13 +16,81 @@ let currentYouTubeSearchResults = [];
 const JIKE_ICON_URL =
     'https://d1nxzqpcg2bym0.cloudfront.net/google_play/com.ruguoapp.jike/3c23a822-9fd2-11e9-8715-65c50e06cc40/64x64';
 
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+function clearElement(element) {
+    element?.replaceChildren();
+}
+
+// 弹幕可能有上万条，用 DocumentFragment 一次插入，避免展开参数超出上限
+function renderDanmakuItems(list, danmakus, formatTime) {
+    const fragment = document.createDocumentFragment();
+    danmakus.forEach((danmaku) => {
+        fragment.appendChild(
+            createElement(
+                'div',
+                {
+                    className: 'danmaku-item',
+                    dataset: { time: danmaku.time }
+                },
+                [
+                    createElement('span', {
+                        className: 'danmaku-time',
+                        textContent: formatTime(danmaku.time)
+                    }),
+                    createElement('span', {
+                        className: 'danmaku-text',
+                        textContent: danmaku.text
+                    })
+                ]
+            )
+        );
+    });
+    list.replaceChildren(fragment);
+}
+
+function createElement(tagName, options = {}, children = []) {
+    const element = document.createElement(tagName);
+
+    if (options.id) element.id = options.id;
+    if (options.className) element.className = options.className;
+    if (options.textContent !== undefined) element.textContent = options.textContent;
+    if (options.title !== undefined) element.title = options.title;
+    if (options.dataset) {
+        Object.entries(options.dataset).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) {
+                element.dataset[key] = String(value);
+            }
+        });
+    }
+    if (options.attributes) {
+        Object.entries(options.attributes).forEach(([key, value]) => {
+            if (value !== undefined && value !== null) {
+                element.setAttribute(key, String(value));
+            }
+        });
+    }
+    if (options.style) {
+        Object.assign(element.style, options.style);
+    }
+
+    const childList = Array.isArray(children) ? children : [children];
+    childList.filter(Boolean).forEach((child) => {
+        element.appendChild(child instanceof Node ? child : document.createTextNode(String(child)));
+    });
+
+    return element;
+}
+
+function createImageElement(src, alt = '') {
+    const image = createElement('img', {
+        attributes: {
+            src: normalizeBilibiliImageUrl(src || ''),
+            alt
+        }
+    });
+    image.addEventListener('error', () => {
+        image.style.display = 'none';
+    });
+    return image;
 }
 
 function normalizeBilibiliImageUrl(url) {
@@ -349,7 +417,7 @@ function renderSocialIcons(config) {
 
     containers.forEach((container) => {
         // 清空容器
-        container.innerHTML = '';
+        clearElement(container);
 
         // 应用滤镜设置
         if (config.enableGrayscaleFilter) {
@@ -771,8 +839,8 @@ function updateManualInputUI(hasData, bilibiliUrl = '', noMatchData = null) {
         if (searchStatus && !searchStatus.textContent) {
             searchStatus.textContent = '按当前标题搜索 B 站视频';
         }
-        if (searchList && !searchList.innerHTML) {
-            searchList.innerHTML = '';
+        if (searchList && !searchList.hasChildNodes()) {
+            clearElement(searchList);
         }
     } else if (noMatchData) {
         // 未匹配状态：显示提示和B站空间按钮
@@ -852,16 +920,7 @@ function displayDanmakuList(danmakus) {
             ? danmakus.filter((d) => d.text.toLowerCase().includes(filterText.toLowerCase()))
             : danmakus;
 
-        list.innerHTML = filtered
-            .map(
-                (danmaku) => `
-            <div class="danmaku-item" data-time="${danmaku.time}">
-                <span class="danmaku-time">${formatTime(danmaku.time)}</span>
-                <span class="danmaku-text">${danmaku.text}</span>
-            </div>
-        `
-            )
-            .join('');
+        renderDanmakuItems(list, filtered, formatTime);
     };
 
     renderList();
@@ -1023,24 +1082,49 @@ function displayUserSearchResults(users, pageInfo) {
     searchResults.style.display = 'block';
     searchStatus.textContent = `找到${users.length}个可能的UP主，请选择：`;
 
-    searchList.innerHTML = users
-        .map(
-            (user) => `
-        <div class="search-item user-item" data-mid="${user.mid}" data-space-url="${user.spaceUrl}">
-            <div class="search-item-cover">
-                <img src="${user.face.startsWith('https:') ? user.face : 'https:' + user.face}" alt="${user.uname}" onerror="this.style.display='none'">
-            </div>
-            <div class="search-item-content">
-                <div class="search-item-title">${user.uname}</div>
-                <div class="search-item-info">
-                    ${user.fans > 10000 ? (user.fans / 10000).toFixed(1) + '万' : user.fans} 粉丝 · ${user.videos} 个视频
-                </div>
-                ${user.usign ? `<div class="search-item-info">${user.usign}</div>` : ''}
-            </div>
-        </div>
-    `
-        )
-        .join('');
+    searchList.replaceChildren(
+        ...users.map((user) => {
+            const faceUrl = user.face?.startsWith('https:')
+                ? user.face
+                : `https:${user.face || ''}`;
+            const userInfo = [
+                createElement('div', {
+                    className: 'search-item-title',
+                    textContent: user.uname
+                }),
+                createElement('div', {
+                    className: 'search-item-info',
+                    textContent: `${user.fans > 10000 ? (user.fans / 10000).toFixed(1) + '万' : user.fans} 粉丝 · ${user.videos} 个视频`
+                })
+            ];
+
+            if (user.usign) {
+                userInfo.push(
+                    createElement('div', {
+                        className: 'search-item-info',
+                        textContent: user.usign
+                    })
+                );
+            }
+
+            return createElement(
+                'div',
+                {
+                    className: 'search-item user-item',
+                    dataset: {
+                        mid: user.mid,
+                        spaceUrl: user.spaceUrl
+                    }
+                },
+                [
+                    createElement('div', { className: 'search-item-cover' }, [
+                        createImageElement(faceUrl, user.uname)
+                    ]),
+                    createElement('div', { className: 'search-item-content' }, userInfo)
+                ]
+            );
+        })
+    );
 
     // 绑定点击事件
     searchList.querySelectorAll('.user-item').forEach((item) => {
@@ -1084,21 +1168,36 @@ function displayVideoSearchResults(videos, youtubeVideoId) {
     searchResults.style.display = 'block';
     searchStatus.textContent = `找到${videos.length}个相关视频：`;
 
-    searchList.innerHTML = videos
-        .map(
-            (video) => `
-        <div class="search-item video-item" data-bvid="${video.bvid}" data-mid="${video.mid}" data-author="${video.author}">
-            <div class="search-item-cover">
-                <img src="${video.pic}" alt="${video.title}" onerror="this.style.display='none'">
-            </div>
-            <div class="search-item-content">
-                <div class="search-item-title">${video.title}</div>
-                <div class="search-item-info">UP主: ${video.author} · ${video.pubdate}</div>
-            </div>
-        </div>
-    `
+    searchList.replaceChildren(
+        ...videos.map((video) =>
+            createElement(
+                'div',
+                {
+                    className: 'search-item video-item',
+                    dataset: {
+                        bvid: video.bvid,
+                        mid: video.mid,
+                        author: video.author
+                    }
+                },
+                [
+                    createElement('div', { className: 'search-item-cover' }, [
+                        createImageElement(video.pic, video.title)
+                    ]),
+                    createElement('div', { className: 'search-item-content' }, [
+                        createElement('div', {
+                            className: 'search-item-title',
+                            textContent: video.title
+                        }),
+                        createElement('div', {
+                            className: 'search-item-info',
+                            textContent: `UP主: ${video.author} · ${video.pubdate}`
+                        })
+                    ])
+                ]
+            )
         )
-        .join('');
+    );
 
     // 绑定点击事件
     searchList.querySelectorAll('.video-item').forEach((item) => {
@@ -1411,11 +1510,11 @@ function displaySearchResults(results, youtubeVideoId, noMatchData = null, optio
 
     if (currentYouTubeSearchResults.length === 0) {
         searchStatus.textContent = '未找到匹配的视频';
-        searchList.innerHTML = '';
+        clearElement(searchList);
         updateManualInputUI(false, '', noMatchData);
     } else if (currentYouTubeSearchResults.length === 1 && options.autoDownloadSingle) {
         searchStatus.textContent = '找到1个匹配视频，正在自动下载弹幕...';
-        searchList.innerHTML = '';
+        clearElement(searchList);
         // 自动下载单个结果（也会自动关闭）
         downloadDanmakuFromBV(
             currentYouTubeSearchResults[0].bvid,
@@ -1424,35 +1523,58 @@ function displaySearchResults(results, youtubeVideoId, noMatchData = null, optio
         );
     } else {
         searchStatus.textContent = `找到${currentYouTubeSearchResults.length}个匹配视频，请选择：`;
-        searchList.innerHTML = currentYouTubeSearchResults
-            .map(
-                (video, index) => `
-            <div class="search-item ${video.bvid === currentYouTubeSelectedBvid ? 'current-selection' : ''}" data-bvid="${escapeHtml(video.bvid)}" data-index="${index}">
-                <div class="search-item-media">
-                    <div class="search-item-cover">
-                        <img src="${escapeHtml(normalizeBilibiliImageUrl(video.pic || ''))}" alt="视频封面" onerror="this.style.display='none'">
-                        ${
-                            video.bvid === currentYouTubeSelectedBvid
-                                ? '<div class="search-selection-check">✓</div>'
-                                : ''
+        searchList.replaceChildren(
+            ...currentYouTubeSearchResults.map((video, index) => {
+                const isCurrentSelection = video.bvid === currentYouTubeSelectedBvid;
+                const coverChildren = [createImageElement(video.pic || '', '视频封面')];
+
+                if (isCurrentSelection) {
+                    coverChildren.push(
+                        createElement('div', {
+                            className: 'search-selection-check',
+                            textContent: '✓'
+                        })
+                    );
+                }
+
+                const mediaChildren = [
+                    createElement('div', { className: 'search-item-cover' }, coverChildren)
+                ];
+
+                if (isCurrentSelection) {
+                    mediaChildren.push(
+                        createElement('div', {
+                            className: 'search-selection-label',
+                            textContent: '当前选择'
+                        })
+                    );
+                }
+
+                return createElement(
+                    'div',
+                    {
+                        className: `search-item${isCurrentSelection ? ' current-selection' : ''}`,
+                        dataset: {
+                            bvid: video.bvid,
+                            index
                         }
-                    </div>
-                    ${
-                        video.bvid === currentYouTubeSelectedBvid
-                            ? '<div class="search-selection-label">当前选择</div>'
-                            : ''
-                    }
-                </div>
-                <div class="search-item-content">
-                    <div class="search-item-title">${escapeHtml(video.title)}</div>
-                    <div class="search-item-info">
-                        UP: ${escapeHtml(video.author || '未知')} · ${escapeHtml(video.duration || '未知时长')} · 匹配${Math.round((video.highlightRatio || 0) * 100)}% · 弹幕${getSearchResultDanmakuCount(video)}
-                    </div>
-                </div>
-            </div>
-        `
-            )
-            .join('');
+                    },
+                    [
+                        createElement('div', { className: 'search-item-media' }, mediaChildren),
+                        createElement('div', { className: 'search-item-content' }, [
+                            createElement('div', {
+                                className: 'search-item-title',
+                                textContent: video.title
+                            }),
+                            createElement('div', {
+                                className: 'search-item-info',
+                                textContent: `UP: ${video.author || '未知'} · ${video.duration || '未知时长'} · 匹配${Math.round((video.highlightRatio || 0) * 100)}% · 弹幕${getSearchResultDanmakuCount(video)}`
+                            })
+                        ])
+                    ]
+                );
+            })
+        );
 
         // 绑定点击事件
         searchList.querySelectorAll('.search-item').forEach((item) => {
@@ -1699,23 +1821,27 @@ function displayBangumiInterface(pageInfo) {
 
     if (parseResult.isValid) {
         // 解析成功：显示完整信息和更新按钮
-        bangumiSection.innerHTML = `
-            <div class="association-header">
-                <h3>BillBili 原创番剧-《${parseResult.title}》-第${parseResult.episode}话</h3>
-            </div>
-            <div class="input-group">
-                <div class="button-group">
-                    <button id="update-bangumi-btn" style="background-color: #fb7299;">更新弹幕</button>
-                </div>
-            </div>
-        `;
+        const updateButton = createElement('button', {
+            id: 'update-bangumi-btn',
+            textContent: '更新弹幕',
+            style: { backgroundColor: '#fb7299' }
+        });
+        bangumiSection.replaceChildren(
+            createElement('div', { className: 'association-header' }, [
+                createElement('h3', {
+                    textContent: `BillBili 原创番剧-《${parseResult.title}》-第${parseResult.episode}话`
+                })
+            ]),
+            createElement('div', { className: 'input-group' }, [
+                createElement('div', { className: 'button-group' }, [updateButton])
+            ])
+        );
 
         // 插入到频道信息后面
         const channelInfo = document.getElementById('channel-info');
         channelInfo.parentNode.insertBefore(bangumiSection, channelInfo.nextSibling);
 
         // 绑定按钮事件和悬停效果
-        const updateButton = document.getElementById('update-bangumi-btn');
         updateButton.onclick = () =>
             downloadBangumiDanmakuFromUI(parseResult.title, parseResult.episode, pageInfo.videoId);
 
@@ -1728,11 +1854,11 @@ function displayBangumiInterface(pageInfo) {
         };
     } else {
         // 解析失败：只显示标题，无按钮
-        bangumiSection.innerHTML = `
-            <div class="association-header">
-                <h3>未识别到番剧正片</h3>
-            </div>
-        `;
+        bangumiSection.replaceChildren(
+            createElement('div', { className: 'association-header' }, [
+                createElement('h3', { textContent: '未识别到番剧正片' })
+            ])
+        );
 
         // 插入到频道信息后面
         const channelInfo = document.getElementById('channel-info');
@@ -2537,16 +2663,7 @@ function displayQuarkDanmakuList(danmakus) {
             ? danmakus.filter((d) => d.text.toLowerCase().includes(filterText.toLowerCase()))
             : danmakus;
 
-        list.innerHTML = filtered
-            .map(
-                (danmaku) => `
-            <div class="danmaku-item" data-time="${danmaku.time}">
-                <span class="danmaku-time">${formatTime(danmaku.time)}</span>
-                <span class="danmaku-text">${danmaku.text}</span>
-            </div>
-        `
-            )
-            .join('');
+        renderDanmakuItems(list, filtered, formatTime);
     };
 
     renderList();
@@ -2635,27 +2752,46 @@ function showPageInfoRefreshButton() {
     // 检查是否已经有刷新按钮
     if (document.getElementById('refresh-page-info-btn')) return;
 
-    channelInfoDiv.innerHTML = `
-        <div style="text-align: center; padding: 20px;">
-            <p style="color: #666; margin-bottom: 10px;">无法获取当前页面信息</p>
-            <button id="refresh-page-info-btn" style="
-                background-color: #ff4444; 
-                color: white; 
-                border: none; 
-                padding: 8px 16px; 
-                border-radius: 4px; 
-                cursor: pointer;
-            ">刷新页面信息</button>
-        </div>
-    `;
+    const refreshButton = createElement('button', {
+        id: 'refresh-page-info-btn',
+        textContent: '刷新页面信息',
+        style: {
+            backgroundColor: '#ff4444',
+            color: 'white',
+            border: 'none',
+            padding: '8px 16px',
+            borderRadius: '4px',
+            cursor: 'pointer'
+        }
+    });
+    channelInfoDiv.replaceChildren(
+        createElement(
+            'div',
+            {
+                style: {
+                    textAlign: 'center',
+                    padding: '20px'
+                }
+            },
+            [
+                createElement('p', {
+                    textContent: '无法获取当前页面信息',
+                    style: {
+                        color: '#666',
+                        marginBottom: '10px'
+                    }
+                }),
+                refreshButton
+            ]
+        )
+    );
 
     // 绑定刷新事件
-    document.getElementById('refresh-page-info-btn').addEventListener('click', async () => {
-        const button = document.getElementById('refresh-page-info-btn');
-        const originalText = button.textContent;
+    refreshButton.addEventListener('click', async () => {
+        const originalText = refreshButton.textContent;
 
-        button.textContent = '刷新中...';
-        button.disabled = true;
+        refreshButton.textContent = '刷新中...';
+        refreshButton.disabled = true;
 
         try {
             // 强制重新获取页面信息（不使用缓存）
@@ -2666,14 +2802,14 @@ function showPageInfoRefreshButton() {
                 showStatus('页面信息已刷新', 'success');
             } else {
                 showStatus('仍无法获取页面信息，请稍后重试', 'error');
-                button.textContent = originalText;
-                button.disabled = false;
+                refreshButton.textContent = originalText;
+                refreshButton.disabled = false;
             }
         } catch (error) {
             console.error('刷新页面信息失败:', error);
             showStatus('刷新失败: ' + error.message, 'error');
-            button.textContent = originalText;
-            button.disabled = false;
+            refreshButton.textContent = originalText;
+            refreshButton.disabled = false;
         }
     });
 

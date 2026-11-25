@@ -133,6 +133,16 @@ export default defineBackground(() => {
         22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52
     ];
 
+    // 解码 HTML 实体（如 &quot; → "）
+    const decodeHtmlEntities = (str) =>
+        str
+            .replace(/&quot;/g, '"')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(code));
+
     // 对 imgKey 和 subKey 进行字符顺序打乱编码
     const getMixinKey = (orig) =>
         mixinKeyEncTab
@@ -1067,7 +1077,7 @@ export default defineBackground(() => {
 
                     results.push({
                         bvid: video.bvid,
-                        title: video.title.replace(/<[^>]*>/g, ''), // 去除HTML标签
+                        title: decodeHtmlEntities(video.title.replace(/<[^>]*>/g, '')), // 去除HTML标签并解码实体
                         author: video.author,
                         mid: video.mid,
                         pubdate: formatPubdate(video.pubdate),
@@ -1244,17 +1254,6 @@ export default defineBackground(() => {
             if (data.code !== 0) {
                 throw new Error(`API返回错误: ${data.message || '未知错误'}`);
             }
-
-            // 解码 HTML 实体（如 &quot; → "）
-            const decodeHtmlEntities = (str) => {
-                return str
-                    .replace(/&quot;/g, '"')
-                    .replace(/&amp;/g, '&')
-                    .replace(/&lt;/g, '<')
-                    .replace(/&gt;/g, '>')
-                    .replace(/&nbsp;/g, ' ')
-                    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(code));
-            };
 
             // 计算高亮字符占标题总长度的比例（只保留字母和数字）
             function calculateHighlightRatio(htmlTitle) {

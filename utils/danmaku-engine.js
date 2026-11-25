@@ -451,7 +451,7 @@ class DanmakuEngine {
         });
 
         // 清空舞台
-        this.stage.innerHTML = '';
+        this.stage.replaceChildren();
     }
 
     // 重置所有弹幕的发射状态

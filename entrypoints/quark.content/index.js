@@ -102,6 +102,117 @@ export default defineContentScript({
             return null;
         }
 
+        function createElement(tagName, options = {}, children = []) {
+            const element = document.createElement(tagName);
+
+            if (options.id) element.id = options.id;
+            if (options.className) element.className = options.className;
+            if (options.textContent !== undefined) element.textContent = options.textContent;
+            if (options.title !== undefined) element.title = options.title;
+            if (options.dataset) {
+                Object.entries(options.dataset).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        element.dataset[key] = String(value);
+                    }
+                });
+            }
+            if (options.attributes) {
+                Object.entries(options.attributes).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null) {
+                        element.setAttribute(key, String(value));
+                    }
+                });
+            }
+            if (options.style) {
+                Object.assign(element.style, options.style);
+            }
+
+            const childList = Array.isArray(children) ? children : [children];
+            childList.filter(Boolean).forEach((child) => {
+                element.appendChild(
+                    child instanceof Node ? child : document.createTextNode(String(child))
+                );
+            });
+
+            return element;
+        }
+
+        function createSvgElement(tagName, attributes = {}, children = []) {
+            const element = document.createElementNS('http://www.w3.org/2000/svg', tagName);
+
+            Object.entries(attributes).forEach(([key, value]) => {
+                if (value !== undefined && value !== null) {
+                    element.setAttribute(key, String(value));
+                }
+            });
+
+            const childList = Array.isArray(children) ? children : [children];
+            childList.filter(Boolean).forEach((child) => element.appendChild(child));
+
+            return element;
+        }
+
+        function createSpinner() {
+            return createElement('span', { className: 'qb-loading-spinner' });
+        }
+
+        function createPopoverMessage(className, text, showSpinner = false) {
+            return createElement(
+                'div',
+                { className },
+                showSpinner ? [createSpinner(), document.createTextNode(text)] : [text]
+            );
+        }
+
+        function setPopoverMessage(content, className, text, showSpinner = false) {
+            content?.replaceChildren(createPopoverMessage(className, text, showSpinner));
+        }
+
+        function createSelectionMarker() {
+            return createElement('div', {
+                className: 'qb-popover-selection-check',
+                textContent: '✓'
+            });
+        }
+
+        function createSelectionLabel() {
+            return createElement('div', {
+                className: 'qb-popover-selection-label',
+                textContent: '当前选择'
+            });
+        }
+
+        function createItemOverlay() {
+            return createElement(
+                'div',
+                {
+                    className: 'qb-popover-item-overlay',
+                    style: { display: 'none' }
+                },
+                [createSpinner()]
+            );
+        }
+
+        function setOverlayLoading(overlay) {
+            overlay.replaceChildren(createSpinner());
+            overlay.classList.remove('qb-overlay-success', 'qb-overlay-error');
+        }
+
+        function setOverlaySuccess(overlay, count) {
+            overlay.replaceChildren(
+                createElement('span', { className: 'qb-success-icon', textContent: '✓' }),
+                createElement('span', { textContent: `${count}条` })
+            );
+            overlay.classList.add('qb-overlay-success');
+        }
+
+        function setOverlayError(overlay) {
+            overlay.replaceChildren(
+                createElement('span', { className: 'qb-error-icon', textContent: '✗' })
+            );
+            overlay.classList.add('qb-overlay-error');
+        }
+
         // 添加"B站弹幕"按钮（使用固定定位，放在播放历史右侧）
         function addDanmakuButton() {
             if (danmakuButtonAdded) return;
@@ -123,35 +234,87 @@ export default defineContentScript({
             const danmakuBtn = document.createElement('div');
             danmakuBtn.id = 'qb-danmaku-btn';
             danmakuBtn.className = 'qb-danmaku-btn';
-            danmakuBtn.innerHTML = `
-                <svg class="qb-danmaku-icon" viewBox="0 0 24 24" width="20" height="20">
-                    <path fill="currentColor" d="M17.813 4.653h0.854c1.51 0.054 2.769 0.578 3.773 1.574 1.004 0.995 1.524 2.249 1.56 3.76v7.36c-0.036 1.51 -0.556 2.769 -1.56 3.773s-2.262 1.524 -3.773 1.56H5.333c-1.51 -0.036 -2.769 -0.556 -3.773 -1.56S0.036 18.858 0 17.347v-7.36c0.036 -1.511 0.556 -2.765 1.56 -3.76 1.004 -0.996 2.262 -1.52 3.773 -1.574h0.774l-1.174 -1.12a1.234 1.234 0 0 1 -0.373 -0.906c0 -0.356 0.124 -0.658 0.373 -0.907l0.027 -0.027c0.267 -0.249 0.573 -0.373 0.92 -0.373 0.347 0 0.653 0.124 0.92 0.373L9.653 4.44c0.071 0.071 0.134 0.142 0.187 0.213h4.267a0.836 0.836 0 0 1 0.16 -0.213l2.853 -2.747c0.267 -0.249 0.573 -0.373 0.92 -0.373 0.347 0 0.662 0.151 0.929 0.4 0.267 0.249 0.391 0.551 0.391 0.907 0 0.355 -0.124 0.657 -0.373 0.906zM5.333 7.24c-0.746 0.018 -1.373 0.276 -1.88 0.773 -0.506 0.498 -0.769 1.13 -0.786 1.894v7.52c0.017 0.764 0.28 1.395 0.786 1.893 0.507 0.498 1.134 0.756 1.88 0.773h13.334c0.746 -0.017 1.373 -0.275 1.88 -0.773 0.506 -0.498 0.769 -1.129 0.786 -1.893v-7.52c-0.017 -0.765 -0.28 -1.396 -0.786 -1.894 -0.507 -0.497 -1.134 -0.755 -1.88 -0.773zM8 11.107c0.373 0 0.684 0.124 0.933 0.373 0.25 0.249 0.383 0.569 0.4 0.96v1.173c-0.017 0.391 -0.15 0.711 -0.4 0.96 -0.249 0.25 -0.56 0.374 -0.933 0.374s-0.684 -0.125 -0.933 -0.374c-0.25 -0.249 -0.383 -0.569 -0.4 -0.96V12.44c0 -0.373 0.129 -0.689 0.386 -0.947 0.258 -0.257 0.574 -0.386 0.947 -0.386zm8 0c0.373 0 0.684 0.124 0.933 0.373 0.25 0.249 0.383 0.569 0.4 0.96v1.173c-0.017 0.391 -0.15 0.711 -0.4 0.96 -0.249 0.25 -0.56 0.374 -0.933 0.374s-0.684 -0.125 -0.933 -0.374c-0.25 -0.249 -0.383 -0.569 -0.4 -0.96V12.44c0.017 -0.391 0.15 -0.711 0.4 -0.96 0.249 -0.249 0.56 -0.373 0.933 -0.373Z"/>
-                </svg>
-                <span class="qb-danmaku-text">B站弹幕</span>
-            `;
+            danmakuBtn.append(
+                createSvgElement(
+                    'svg',
+                    {
+                        class: 'qb-danmaku-icon',
+                        viewBox: '0 0 24 24',
+                        width: '20',
+                        height: '20'
+                    },
+                    [
+                        createSvgElement('path', {
+                            fill: 'currentColor',
+                            d: 'M17.813 4.653h0.854c1.51 0.054 2.769 0.578 3.773 1.574 1.004 0.995 1.524 2.249 1.56 3.76v7.36c-0.036 1.51 -0.556 2.769 -1.56 3.773s-2.262 1.524 -3.773 1.56H5.333c-1.51 -0.036 -2.769 -0.556 -3.773 -1.56S0.036 18.858 0 17.347v-7.36c0.036 -1.511 0.556 -2.765 1.56 -3.76 1.004 -0.996 2.262 -1.52 3.773 -1.574h0.774l-1.174 -1.12a1.234 1.234 0 0 1 -0.373 -0.906c0 -0.356 0.124 -0.658 0.373 -0.907l0.027 -0.027c0.267 -0.249 0.573 -0.373 0.92 -0.373 0.347 0 0.653 0.124 0.92 0.373L9.653 4.44c0.071 0.071 0.134 0.142 0.187 0.213h4.267a0.836 0.836 0 0 1 0.16 -0.213l2.853 -2.747c0.267 -0.249 0.573 -0.373 0.92 -0.373 0.347 0 0.662 0.151 0.929 0.4 0.267 0.249 0.391 0.551 0.391 0.907 0 0.355 -0.124 0.657 -0.373 0.906zM5.333 7.24c-0.746 0.018 -1.373 0.276 -1.88 0.773 -0.506 0.498 -0.769 1.13 -0.786 1.894v7.52c0.017 0.764 0.28 1.395 0.786 1.893 0.507 0.498 1.134 0.756 1.88 0.773h13.334c0.746 -0.017 1.373 -0.275 1.88 -0.773 0.506 -0.498 0.769 -1.129 0.786 -1.893v-7.52c-0.017 -0.765 -0.28 -1.396 -0.786 -1.894 -0.507 -0.497 -1.134 -0.755 -1.88 -0.773zM8 11.107c0.373 0 0.684 0.124 0.933 0.373 0.25 0.249 0.383 0.569 0.4 0.96v1.173c-0.017 0.391 -0.15 0.711 -0.4 0.96 -0.249 0.25 -0.56 0.374 -0.933 0.374s-0.684 -0.125 -0.933 -0.374c-0.25 -0.249 -0.383 -0.569 -0.4 -0.96V12.44c0 -0.373 0.129 -0.689 0.386 -0.947 0.258 -0.257 0.574 -0.386 0.947 -0.386zm8 0c0.373 0 0.684 0.124 0.933 0.373 0.25 0.249 0.383 0.569 0.4 0.96v1.173c-0.017 0.391 -0.15 0.711 -0.4 0.96 -0.249 0.25 -0.56 0.374 -0.933 0.374s-0.684 -0.125 -0.933 -0.374c-0.25 -0.249 -0.383 -0.569 -0.4 -0.96V12.44c0.017 -0.391 0.15 -0.711 0.4 -0.96 0.249 -0.249 0.56 -0.373 0.933 -0.373Z'
+                        })
+                    ]
+                ),
+                createElement('span', { className: 'qb-danmaku-text', textContent: 'B站弹幕' })
+            );
 
             // 创建弹窗容器
             const popover = document.createElement('div');
             popover.id = 'qb-danmaku-popover';
             popover.className = 'qb-danmaku-popover';
-            popover.innerHTML = `
-                <div class="qb-popover-arrow"></div>
-                <div class="qb-popover-header">
-                    <span class="qb-popover-header-title">B站弹幕</span>
-                    <div class="qb-popover-search">
-                        <input type="text" id="qb-search-input" placeholder="搜索关键词..." />
-                        <button id="qb-search-btn" title="搜索">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="qb-popover-content" id="qb-popover-content">
-                    <div class="qb-popover-loading">正在搜索...</div>
-                </div>
-            `;
+            const searchInputEl = createElement('input', {
+                id: 'qb-search-input',
+                attributes: {
+                    type: 'text',
+                    placeholder: '搜索关键词...'
+                }
+            });
+            const searchButtonEl = createElement(
+                'button',
+                {
+                    id: 'qb-search-btn',
+                    title: '搜索'
+                },
+                [
+                    createSvgElement(
+                        'svg',
+                        {
+                            viewBox: '0 0 24 24',
+                            fill: 'none',
+                            stroke: 'currentColor',
+                            'stroke-width': '2',
+                            'stroke-linecap': 'round',
+                            'stroke-linejoin': 'round'
+                        },
+                        [
+                            createSvgElement('circle', { cx: '11', cy: '11', r: '8' }),
+                            createSvgElement('line', {
+                                x1: '21',
+                                y1: '21',
+                                x2: '16.65',
+                                y2: '16.65'
+                            })
+                        ]
+                    )
+                ]
+            );
+            const popoverContent = createElement(
+                'div',
+                {
+                    id: 'qb-popover-content',
+                    className: 'qb-popover-content'
+                },
+                [createPopoverMessage('qb-popover-loading', '正在搜索...')]
+            );
+            popover.append(
+                createElement('div', { className: 'qb-popover-arrow' }),
+                createElement('div', { className: 'qb-popover-header' }, [
+                    createElement('span', {
+                        className: 'qb-popover-header-title',
+                        textContent: 'B站弹幕'
+                    }),
+                    createElement('div', { className: 'qb-popover-search' }, [
+                        searchInputEl,
+                        searchButtonEl
+                    ])
+                ]),
+                popoverContent
+            );
 
             // 添加到 body（使用固定定位）
             document.body.appendChild(danmakuBtn);
@@ -218,8 +381,7 @@ export default defineContentScript({
 
                 cachedSearchKeyword = keyword;
                 const content = document.getElementById('qb-popover-content');
-                content.innerHTML =
-                    '<div class="qb-popover-loading"><span class="qb-loading-spinner"></span>正在搜索...</div>';
+                setPopoverMessage(content, 'qb-popover-loading', '正在搜索...', true);
 
                 try {
                     const response = await browser.runtime.sendMessage({
@@ -234,11 +396,11 @@ export default defineContentScript({
                         await refreshSelectedBvidForCurrentVideo();
                         renderSearchResults(response.results);
                     } else {
-                        content.innerHTML = '<div class="qb-popover-empty">未找到相关视频</div>';
+                        setPopoverMessage(content, 'qb-popover-empty', '未找到相关视频');
                     }
                 } catch (error) {
                     console.error('[Quark] 搜索失败:', error);
-                    content.innerHTML = '<div class="qb-popover-error">搜索失败</div>';
+                    setPopoverMessage(content, 'qb-popover-error', '搜索失败');
                 }
             };
 
@@ -290,16 +452,6 @@ export default defineContentScript({
             return cachedSelectedBvid;
         }
 
-        function getSelectionMarkerHtml(isCurrentSelection) {
-            if (!isCurrentSelection) return '';
-            return '<div class="qb-popover-selection-check">✓</div>';
-        }
-
-        function getSelectionLabelHtml(isCurrentSelection) {
-            if (!isCurrentSelection) return '';
-            return '<div class="qb-popover-selection-label">当前选择</div>';
-        }
-
         function markCurrentSelectionInPopover(bvid) {
             cachedSelectedBvid = bvid || null;
 
@@ -314,13 +466,11 @@ export default defineContentScript({
                 item.querySelector('.qb-popover-selection-label')?.remove();
 
                 if (isCurrentSelection) {
-                    item.querySelector('.qb-popover-item-cover')?.insertAdjacentHTML(
-                        'beforeend',
-                        getSelectionMarkerHtml(true)
+                    item.querySelector('.qb-popover-item-cover')?.appendChild(
+                        createSelectionMarker()
                     );
-                    item.querySelector('.qb-popover-item-media')?.insertAdjacentHTML(
-                        'beforeend',
-                        getSelectionLabelHtml(true)
+                    item.querySelector('.qb-popover-item-media')?.appendChild(
+                        createSelectionLabel()
                     );
                 }
             });
@@ -366,30 +516,64 @@ export default defineContentScript({
             const content = document.getElementById('qb-popover-content');
             if (!content) return;
 
-            content.innerHTML = sortResultsByDanmaku(results)
-                .map((video, index) => {
+            content.replaceChildren(
+                ...sortResultsByDanmaku(results).map((video, index) => {
                     const isCurrentSelection =
                         !!cachedSelectedBvid && video.bvid === cachedSelectedBvid;
-                    return `
-                <div class="qb-popover-item ${isCurrentSelection ? 'qb-current-selection' : ''}" data-bvid="${video.bvid}" data-index="${index}">
-                    <div class="qb-popover-item-media">
-                        <div class="qb-popover-item-cover">
-                            <img src="${video.pic}" alt="" referrerpolicy="no-referrer" />
-                            ${getSelectionMarkerHtml(isCurrentSelection)}
-                            <div class="qb-popover-item-overlay" style="display:none;">
-                                <span class="qb-loading-spinner"></span>
-                            </div>
-                        </div>
-                        ${getSelectionLabelHtml(isCurrentSelection)}
-                    </div>
-                    <div class="qb-popover-item-info">
-                        <div class="qb-popover-item-title" title="${video.title.replace(/"/g, '&quot;')}">${video.title}</div>
-                        <div class="qb-popover-item-author">UP: ${video.author} · ${video.duration} · 匹配${Math.round((video.highlightRatio || 0) * 100)}%</div>
-                    </div>
-                </div>
-            `;
+                    const image = createElement('img', {
+                        attributes: {
+                            src: video.pic || '',
+                            alt: '',
+                            referrerpolicy: 'no-referrer'
+                        }
+                    });
+                    image.addEventListener('error', () => {
+                        image.style.display = 'none';
+                    });
+
+                    const coverChildren = [image];
+                    if (isCurrentSelection) {
+                        coverChildren.push(createSelectionMarker());
+                    }
+                    coverChildren.push(createItemOverlay());
+
+                    const mediaChildren = [
+                        createElement('div', { className: 'qb-popover-item-cover' }, coverChildren)
+                    ];
+                    if (isCurrentSelection) {
+                        mediaChildren.push(createSelectionLabel());
+                    }
+
+                    return createElement(
+                        'div',
+                        {
+                            className: `qb-popover-item${isCurrentSelection ? ' qb-current-selection' : ''}`,
+                            dataset: {
+                                bvid: video.bvid,
+                                index
+                            }
+                        },
+                        [
+                            createElement(
+                                'div',
+                                { className: 'qb-popover-item-media' },
+                                mediaChildren
+                            ),
+                            createElement('div', { className: 'qb-popover-item-info' }, [
+                                createElement('div', {
+                                    className: 'qb-popover-item-title',
+                                    title: video.title,
+                                    textContent: video.title
+                                }),
+                                createElement('div', {
+                                    className: 'qb-popover-item-author',
+                                    textContent: `UP: ${video.author} · ${video.duration} · 匹配${Math.round((video.highlightRatio || 0) * 100)}%`
+                                })
+                            ])
+                        ]
+                    );
                 })
-                .join('');
+            );
 
             // 绑定点击事件
             content.querySelectorAll('.qb-popover-item').forEach((item) => {
@@ -409,7 +593,7 @@ export default defineContentScript({
             const overlay = itemElement.querySelector('.qb-popover-item-overlay');
             if (overlay) {
                 overlay.style.display = 'flex';
-                overlay.innerHTML = '<span class="qb-loading-spinner"></span>';
+                setOverlayLoading(overlay);
             }
 
             try {
@@ -430,8 +614,7 @@ export default defineContentScript({
 
                     // 显示成功状态
                     if (overlay) {
-                        overlay.innerHTML = `<span class="qb-success-icon">✓</span><span>${response.count}条</span>`;
-                        overlay.classList.add('qb-overlay-success');
+                        setOverlaySuccess(overlay, response.count);
                     }
 
                     // 初始化弹幕引擎并加载弹幕
@@ -454,8 +637,7 @@ export default defineContentScript({
             } catch (error) {
                 console.error('[Quark] 弹幕下载失败:', error);
                 if (overlay) {
-                    overlay.innerHTML = '<span class="qb-error-icon">✗</span>';
-                    overlay.classList.add('qb-overlay-error');
+                    setOverlayError(overlay);
                     setTimeout(() => {
                         overlay.style.display = 'none';
                         overlay.classList.remove('qb-overlay-error');
@@ -942,8 +1124,7 @@ export default defineContentScript({
 
             const content = document.getElementById('qb-popover-content');
             if (content) {
-                content.innerHTML =
-                    '<div class="qb-popover-loading"><span class="qb-loading-spinner"></span>正在搜索...</div>';
+                setPopoverMessage(content, 'qb-popover-loading', '正在搜索...', true);
             }
         }
 
